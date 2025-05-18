@@ -496,7 +496,10 @@ def min_conflicts_search(start_state, max_steps=1000, tabu_size=5):
     return path if path else [start_state]
 
 # Genetic Algorithm cho 8-puzzle
-def genetic_algorithm_search(start_state, population_size=50, generations=200, mutation_rate=0.2):
+def genetic_algorithm_search(start_state, population_size=50, generations=200, mutation_rate=0.2, max_attempts=10):
+    import random
+    from utils import heuristic, is_solvable, get_neighbors, are_states_equal
+
     def flatten(state):
         return [num for row in state for num in row]
 
@@ -504,7 +507,7 @@ def genetic_algorithm_search(start_state, population_size=50, generations=200, m
         return [flat[i*3:(i+1)*3] for i in range(3)]
 
     def fitness(state):
-        return -heuristic(unflatten(state))  # càng gần 0 càng tốt
+        return -heuristic(state)  # càng cao càng tốt
 
     def crossover(parent1, parent2):
         cut = random.randint(1, 7)
@@ -518,35 +521,50 @@ def genetic_algorithm_search(start_state, population_size=50, generations=200, m
         return s
 
     base = flatten(start_state)
-    population = []
-    for _ in range(population_size):
-        ind = base[:]
-        random.shuffle(ind)
-        while not is_solvable(unflatten(ind)):
-            random.shuffle(ind)
-        population.append(ind)
-
     best_state = None
-    for _ in range(generations):
-        scored = sorted([(fitness(ind), ind) for ind in population], reverse=True)
-        if -scored[0][0] == 0:
-            best_state = unflatten(scored[0][1])
+    best_score = float('-inf')
+
+    for attempt in range(max_attempts):
+        # Khởi tạo lại quần thể mỗi lần thử
+        population = []
+        for _ in range(population_size):
+            ind = base[:]
+            random.shuffle(ind)
+            while not is_solvable(unflatten(ind)):
+                random.shuffle(ind)
+            population.append(ind)
+
+        for _ in range(generations):
+            scored = sorted([(fitness(unflatten(ind)), ind) for ind in population], reverse=True)
+            if -scored[0][0] == 0:
+                best_state = unflatten(scored[0][1])
+                break
+            # Lưu trạng thái tốt nhất hiện tại
+            if scored[0][0] > best_score:
+                best_score = scored[0][0]
+                best_state = unflatten(scored[0][1])
+            selected = [ind for _, ind in scored[:population_size//2]]
+            children = []
+            while len(children) < population_size:
+                p1, p2 = random.sample(selected, 2)
+                child = crossover(p1, p2)
+                if random.random() < mutation_rate:
+                    child = mutate(child)
+                if len(set(child)) == 9 and is_solvable(unflatten(child)):
+                    children.append(child)
+            population = children
+        else:
+            # Nếu không break (không tìm thấy lời giải), cập nhật best_state nếu cần
+            scored = sorted([(fitness(unflatten(ind)), ind) for ind in population], reverse=True)
+            if scored[0][0] > best_score:
+                best_score = scored[0][0]
+                best_state = unflatten(scored[0][1])
+        # Nếu đã tìm được trạng thái đích, thoát vòng lặp lớn
+        if best_state is not None and heuristic(best_state) == 0:
             break
-        selected = [ind for _, ind in scored[:population_size//2]]
-        children = []
-        while len(children) < population_size:
-            p1, p2 = random.sample(selected, 2)
-            child = crossover(p1, p2)
-            if random.random() < mutation_rate:
-                child = mutate(child)
-            if len(set(child)) == 9 and is_solvable(unflatten(child)):
-                children.append(child)
-        population = children
-    else:
-        # Nếu không tìm được lời giải hoàn chỉnh, lấy cá thể tốt nhất
-        best_state = unflatten(sorted([(fitness(ind), ind) for ind in population], reverse=True)[0][1])
 
     # Tìm đường đi từ start_state đến best_state bằng BFS
+    from collections import deque
     def bfs_path(start, goal):
         queue = deque([(start, [])])
         visited = {str(start)}
